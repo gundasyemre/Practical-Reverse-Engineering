@@ -15,5 +15,74 @@ For the first routine "KeInitializeDpc" , assembly looks like this on my machine
                 mov     [rcx+20h], r8
                 retn
 KeInitializeDpc endp
+```
 
-When I analyzed _KDPC structure to see what these offsets (0x0 , 0x1 , 0x2 , 0x10 , 0x18 , 0x20 , 0x38) I learnt that they refer to (Type , Importance , Number , ProcessorHistory , DeferredRoutine , DeferredContext and DpcData) , respectively.
+When I analyzed _KDPC structure to see what these offsets mean (0x0 , 0x1 , 0x2 , 0x10 , 0x18 , 0x20 , 0x38) I learnt that they refer to (Type , Importance , Number , ProcessorHistory , DeferredRoutine , DeferredContext and DpcData) , respectively.
+
+### Decompilatiob of KeInitializeApc
+
+For "KeInitializeApc" the assembly looks like this :
+
+```assembly
+; __int64 __fastcall KeInitializeApc(__int64, __int64, int, __int64, __int64, __int64, unsigned __int8, __int64)
+public KeInitializeApc
+KeInitializeApc proc near
+
+arg_20= qword ptr  28h
+arg_28= qword ptr  30h
+arg_30= byte ptr  38h
+arg_38= qword ptr  40h
+
+mov     r10, [rsp+arg_38]
+mov     byte ptr [rcx], 12h
+mov     byte ptr [rcx+2], 58h ; 'X'
+cmp     r8d, 2
+jnz     short loc_140419DFA
+movzx   r8d, byte ptr [rdx+24Ah]
+loc_140419DFA:
+mov     rax, [rsp+arg_20]
+mov     [rcx+50h], r8b
+xor     r8d, r8d
+mov     [rcx+28h], rax
+movzx   eax, [rsp+arg_30]
+mov     [rcx+8], rdx
+mov     rdx, [rsp+arg_28]
+test    rdx, rdx
+mov     [rcx+20h], r9
+mov     [rcx+30h], rdx
+cmovz   eax, r8d
+cmovz   r10, r8
+mov     [rcx+51h], al
+mov     [rcx+38h], r10
+mov     [rcx+52h], r8b
+mov     [rcx+1], r8b
+retn
+KeInitializeApc endp
+```
+
+As we can see , the disassembler I am using (IDA Pro) couldn't name the arguments (I use microsoft server for path symbols) , so I used "https://www.vergiliusproject.com/kernels/x64/windows-11/25h2/_KAPC" , and learnt the offsets :
+
+```c
+//0x58 bytes (sizeof)
+struct _KAPC
+{
+    UCHAR Type;                                                             //0x0
+    UCHAR AllFlags;                                                         //0x1
+    UCHAR Size;                                                             //0x2
+    UCHAR SpareByte1;                                                       //0x3
+    ULONG SpareLong0;                                                       //0x4
+    struct _KTHREAD* Thread;                                                //0x8
+    struct _LIST_ENTRY ApcListEntry;                                        //0x10
+    VOID* Reserved[3];                                                      //0x20 , so 0x28 and 0x30 are Reserved[1] and Reserved[2]
+    VOID* NormalContext;                                                    //0x38
+    VOID* SystemArgument1;                                                  //0x40
+    VOID* SystemArgument2;                                                  //0x48
+    CHAR ApcStateIndex;                                                     //0x50
+    CHAR ApcMode;                                                           //0x51
+    UCHAR Inserted;                                                         //0x52
+}; 
+```
+
+I also learnt that in previous versions of Windows "Reserved" was explicitly written so Reserverd[0] is KernelRoutine , Reserved[1] is  RundownRoutine and Reserved[2] is NormalRoutine.
+
+
