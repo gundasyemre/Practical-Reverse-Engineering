@@ -19,7 +19,7 @@ KeInitializeDpc endp
 
 When I analyzed _KDPC structure to see what these offsets mean (0x0 , 0x1 , 0x2 , 0x10 , 0x18 , 0x20 , 0x38) I learnt that they refer to (Type , Importance , Number , ProcessorHistory , DeferredRoutine , DeferredContext and DpcData) , respectively.
 
-### Decompilatiob of KeInitializeApc
+### Decompilation of KeInitializeApc
 
 For "KeInitializeApc" the assembly looks like this :
 
@@ -85,4 +85,31 @@ struct _KAPC
 
 I also learnt that in previous versions of Windows "Reserved" was explicitly written so Reserverd[0] is KernelRoutine , Reserved[1] is  RundownRoutine and Reserved[2] is NormalRoutine.
 
+### Decompilation of ObFastDereferenceObject
+
+Learnt so much just to decompile this , but in short,  I learnt that to dereference an object Windows uses a clever mechanism (_InterlockedCompareExchane64) to speed up the process of deleting the object , and if the fast reference counter is full (0XF) kernel falls back to traditional method and uses negative pointer arithmetic to locate "_OBJECT_HEADER".
+
+
+
+### Decompilation of KeInitializeQueue
+
+While analyzing this function , I encountered many "Blink" and "Flink" s , so I decided to learn them :
+
+    Windows embeds a clever circular linked list to its objects (called LIST_ENTRY), the reason I think its clever is because instead of using arrays, vectors which are "faster" structures to implement , this approach of LIST_ENTRY is "safer" because the OS doesnt need to check and deal with null pointers all the time (which can cause more BSODs).
+
+And here is how I dereferenced the offsets :
+
+```c
+0000000 struct _KQUEUE // sizeof=0x40
+00000000 {                                       
+00000000                                       
+00000000     DISPATCHER_HEADER Header;           
+00000000                                        
+00000018     LIST_ENTRY EntryListHead;           
+00000018                                         
+00000028     volatile ULONG CurrentCount;        
+0000002C     ULONG MaximumCount;                 
+00000030     LIST_ENTRY ThreadListHead;
+00000040 };
+```
 
