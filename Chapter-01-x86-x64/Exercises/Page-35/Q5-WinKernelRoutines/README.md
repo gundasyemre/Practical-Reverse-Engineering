@@ -113,3 +113,13 @@ And here is how I dereferenced the offsets :
 00000040 };
 ```
 
+### Decompilation of KxWaitForLockChainValid
+
+While analyzing `KxWaitForLockChainValid`, I encountered an undocumented (even its parameter , but I found out that its KSPIN_LOCK_QUEUE) busy-wait loop involving variables like `HvlEnlightenments` and magic bitwise checks (`& 0x40`). After some research, I learnt this is a solution for a Virtual Machine problem.
+
+At its core, the routine spins on `while (!*LockQueue->Next)`, using `_mm_pause()` to yield the CPU and prevent pipeline overheating. However, if this OS is running as a guest VM (Hyper-V), spinlocks can cause deadlocks if the vCPU holding the lock is preempted by the host. 
+
+To prevent the host CPU from burning resources endlessly, the loop uses a spin counter (`SpinCounter`). If the counter reaches a certain threshold (`HvlLongSpinCountMask`) and the hypervisor supports it (checked via the `0x40` enlightenment flag), the guest OS makes a Hypercall (`HvlNotifyLongSpinWait`). This essentially tells the hypervisor: "I am stuck spinning, please schedule the vCPU that holds this lock so it can release it."
+
+I think this example was chosen because the authors recommend running a VM for analyzing the samples :)
+
