@@ -123,3 +123,62 @@ To prevent the host CPU from burning resources endlessly, the loop uses a spin c
 
 I think this example was chosen because the authors recommend running a VM for analyzing the samples :)
 
+### Decompilation of KeReadyThread
+
+## Reverse Engineering KeReadyThread 
+
+This exercise demonstrates the analysis of `KeReadyThread`, a core kernel routine responsible for transitioning a thread into a ready state and placing it into the processor's Ready Queue.
+
+### Key Architectural Takeaways:
+* **Fixing Decompiler Hallucinations:** IDA originally decompiled this function with 3 arguments. By tracking the caller via XREFs (verifying that only `RCX` was populated before the `call`), I determined it only takes a single `PKTHREAD` argument. Fixing the function signature allowed IDA's Type Propagation and PDB symbols to perfectly resolve hidden nested structures (e.g., mapping `0xB8` to `Thread->ApcState.Process`).
+* **The Fast Path (Memory Check):** The routine first acts as a gatekeeper. It checks if the thread's parent process is resident in physical RAM (`Process->StackCount.Value`). If it is, it takes the fast path and immediately dispatches the thread via `KiFastReadyThread`.
+* **The Slow Path (Swapping) & IRQL:** If the process is paged out to disk, it must be brought back. To perform this safely, the kernel elevates the processor's IRQL to `DISPATCH_LEVEL (2)` by directly modifying the Task Priority Register (`__writecr8(2u)`). This ensures hardware interrupts don't interfere while `KiInSwapSingleProcess` pages the process back into memory before readying the thread.
+
+### Decompilation of KiInitializeTSS (Actually KiInitializeTRTSS)
+
+Because I couldn't find KiInitializeTSS in Win11 ntoskrnl.exe , winload.efi or winload.exe I had to do some research and I had to download Win10 x86 ntoskrnl.exe to find KiInitializeTRTSS,
+(which I assumed it was doing the same job because of the name and because it was called by KiSystemStartup), when we look at the assembly , the disassembler couldn't name the arguments and the direct decompilation looks messy ,  but I tracked down the references to this routine and tracked down the 2 push assembly instructions before calling this routine (inside KiSystemStartup) so  I found out arg1 is referring to PKTSS structure and arg2 is referring to PKGDTENTRY , the more natural code turns into this :
+
+```c
+ULONG __stdcall KiInitializeTRTSS(PKTSS Tss, PKGDTENTRY TssDescriptor)
+{
+    
+    if ( TssDescriptor )
+    {
+        
+        *(PULONG)(&TssDescriptor->HighWord) &= 0xFFF0FFFF;
+        
+        
+        TssDescriptor->LimitLow = 0x20AB; 
+    }
+
+    
+    memset(Tss->IoMaps[0].IoMap, 0xFF, 0x2004);
+    
+    
+    memset(Tss->IoMaps[0].DirectionMap, 0x00, 0x20);
+    
+    
+    Tss->IoMaps[0].DirectionMap[0] = 4;
+    *(PUSHORT)(&Tss->IoMaps[0].DirectionMap[3]) = 0x1818; // 6168
+
+    
+    memset(Tss->IoMaps[1].DirectionMap, 0x00, 0x20);
+    Tss->IoMaps[1].DirectionMap[0] = 4;
+    *(PUSHORT)(&Tss->IoMaps[1].DirectionMap[3]) = 0x1818;
+
+    
+    Tss->LDT = 0; // LDT (Local Descriptor Table) 
+    
+    
+    *(PULONG)(&Tss->Flags) = 0x20AC0000; 
+    
+    
+    Tss->Ss0 = 0x10; 
+
+    return 0x10;
+}
+```
+
+### What I learnt from KiInitalizeTRTSS
+The KiInitializeTRTSS function is a  routine in the Windows x86 kernel responsible for initializing the hardware Task State Segment (TSS) during the system boot process. It primarily configures the TSS entry within the Global Descriptor Table (GDT) and establishes the Ring 0 data segment (Ss0 = 0x10), which is strictly required for safe privilege level transitions during system calls and hardware interrupts. Furthermore, the function implements a core OS security mechanism by initializing the I/O Permission Bit Map (IOPM) so that no user-mode (Ring3) code can acces hardware ports.
