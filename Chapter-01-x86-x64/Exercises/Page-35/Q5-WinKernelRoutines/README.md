@@ -182,3 +182,20 @@ ULONG __stdcall KiInitializeTRTSS(PKTSS Tss, PKGDTENTRY TssDescriptor)
 
 ### What I learnt from KiInitalizeTRTSS
 The KiInitializeTRTSS function is a  routine in the Windows x86 kernel responsible for initializing the hardware Task State Segment (TSS) during the system boot process. It primarily configures the TSS entry within the Global Descriptor Table (GDT) and establishes the Ring 0 data segment (Ss0 = 0x10), which is strictly required for safe privilege level transitions during system calls and hardware interrupts. Furthermore, the function implements a core OS security mechanism by initializing the I/O Permission Bit Map (IOPM) so that no user-mode (Ring3) code can acces hardware ports.
+
+
+### Decompilation of RtlValidateUnicodeString
+
+This routine acts as a wrapper. It returns STATUS_INVALID_PARAMETER (0xC000000D) if the first argument (ULONG Flags) is NOT zero. If the flag is zero, it delegates the actual validation to its worker function, RtlUnicodeStringValidateWorker.
+
+Since this wrapper alone doesn't actually validate the structure, I also decompiled its worker function. The worker returns STATUS_SUCCESS (0x00000000) if the string pointer is NULL, or if it successfully passes all of the following checks:
+
+1-)Both String->Length and String->MaximumLength are even numbers (multiples of 2, since UTF-16 characters are 2 bytes long).
+
+2-)String->Length <= String->MaximumLength.
+
+3-)String->MaximumLength <= 0xFFFE.
+
+4-)If String->Buffer == NULL, then both Length and MaximumLength must be strictly 0.
+
+In short , these together check if the source string will cause a buffer overflow
